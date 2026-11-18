@@ -1,0 +1,47 @@
+[package]
+name = "otpleaf"
+version = "0.1.0"
+edition = "2024"
+description = "Offline portable desktop TOTP authenticator for Windows and Linux"
+
+[[bin]]
+name = "OTPLeaf"
+path = "src/main.rs"
+
+[dependencies]
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
+data-encoding = "2"
+hmac = "0.12"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
+percent-encoding = "2"
+rfd = "0.18"
+rqrr = "0.10"
+screenshots = "0.8.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+sha2 = "0.10"
+slint = { version = "=1.18.1", default-features = false, features = ["std", "unstable-winit-030", "renderer-software", "compat-1-18"] }
+tempfile = "3"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus = { version = "0.9", features = ["vendored"] }
+ksni = { version = "0.3.7", features = ["blocking"] }
+xcb = { version = "1.7", features = ["dl"] }
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[dev-dependencies]
+i-slint-backend-testing = "=1.18.1"
+
+[profile.release]
+strip = true
+
+[profile.dev]
+debug = 0

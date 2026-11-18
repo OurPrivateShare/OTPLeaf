@@ -1,0 +1,417 @@
+import { CheckBox, ComboBox, LineEdit, ListView } from "std-widgets.slint";
+import { Action, Caption, Glyph, Heading, Paper, Paths, Skin } from "./widgets.slint";
+
+export struct AccountRow {
+    id: string, name: string, note: string, code: string, remaining: int,
+    period: int, algorithm: string, digits: int,
+}
+export struct EntryDraft {
+    id: string, name: string, secret: string, digits: string, period: string,
+    algorithm: string, note: string,
+}
+
+// Typing replaces a LineEdit's one-way text binding. The editor stays open
+// while reviewing a batch of QR codes, so synchronize incoming drafts too.
+component DraftInput inherits LineEdit {
+    in property <string> draft-value;
+    text: root.draft-value;
+    changed draft-value => {
+        if root.text != root.draft-value { root.text = root.draft-value; }
+    }
+}
+
+component TokenCard inherits Paper {
+    in property <AccountRow> account;
+    in property <bool> show-notes;
+    callback copy();
+    callback edit();
+    callback remove();
+    height: 76px;
+
+    HorizontalLayout {
+        padding-left: 14px; padding-right: 10px;
+        spacing: 10px;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 33px; height: 33px; border-radius: 9px; background: Skin.tint;
+            Glyph { x: 7px; y: 7px; width: 19px; height: 19px; data: Paths.key; ink: Skin.accent; }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            min-width: 45px;
+            Text {
+                text: root.account.name;
+                font-size: 15px; font-weight: 650; color: Skin.ink;
+                height: 23px; min-width: 0px; overflow: elide;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.show-notes && root.account.note != "" ? root.account.note
+                    : root.account.algorithm + "  ·  " + root.account.digits + " 位";
+                color: Skin.muted; font-size: 12px;
+                height: 18px; min-width: 0px; overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+        code-button := Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 149px; height: 57px; border-radius: 7px;
+            background: copy-hit.has-hover ? Skin.tint : transparent;
+            border-width: copy-keys.has-focus ? 2px : 0px;
+            border-color: #4c9476;
+            accessible-role: button;
+            accessible-label: "复制 " + root.account.name + " 的验证码";
+            accessible-action-default => { root.copy(); }
+            forward-focus: copy-keys;
+            VerticalLayout {
+                padding-left: 6px; padding-right: 6px;
+                alignment: center;
+                Text {
+                    text: root.account.code; font-size: 23px; font-weight: 700;
+                    color: Skin.accent; height: 31px; vertical-alignment: center;
+                }
+                HorizontalLayout {
+                    spacing: 7px; height: 15px;
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        height: 4px; border-radius: 2px; background: #e2ebe2;
+                        Rectangle {
+                            x: 0px;
+                            width: parent.width * min(1, max(0, root.account.remaining / max(1, root.account.period)));
+                            height: parent.height; border-radius: 2px;
+                            background: root.account.remaining <= 5 ? #b57a37 : #69a380;
+                        }
+                    }
+                    Text {
+                        text: root.account.remaining + " s";
+                        color: Skin.muted; font-size: 11px; min-width: 27px;
+                        horizontal-alignment: right; vertical-alignment: center;
+                    }
+                }
+            }
+            copy-keys := FocusScope {
+                width: 0px;
+                key-pressed(e) => {
+                    if e.text == Key.Space || e.text == Key.Return { root.copy(); return accept; }
+                    return reject;
+                }
+            }
+            copy-hit := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { copy-keys.focus(); root.copy(); }
+            }
+        }
+        Rectangle { y: (parent.height - self.height) / 2; width: 1px; height: 28px; background: Skin.border; }
+        HorizontalLayout {
+            y: (parent.height - self.height) / 2;
+            height: 32px;
+            spacing: 0px;
+            Action { label: "编辑 " + root.account.name; glyph: Paths.edit; icon-only: true; triggered => { root.edit(); } }
+            Action { label: "删除 " + root.account.name; glyph: Paths.trash; icon-only: true; kind: "danger"; triggered => { root.remove(); } }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "OTPLeaf";
+    min-width: 535px;
+    min-height: 560px;
+    preferred-width: 590px;
+    preferred-height: 620px;
+    background: Skin.canvas;
+    default-font-size: 14px;
+
+    in-out property <[AccountRow]> rows;
+    in-out property <int> total-count;
+    in-out property <string> query;
+    in-out property <string> page: "accounts";
+    in-out property <EntryDraft> draft;
+    in-out property <string> edit-error;
+    in-out property <string> feedback;
+    in-out property <bool> group-codes: true;
+    in-out property <bool> show-notes: true;
+    in-out property <string> data-path;
+    in-out property <string> pending-name;
+    in-out property <bool> busy;
+    private property <string> link;
+    private property <bool> staged-group;
+    private property <bool> staged-notes;
+
+    callback search(string);
+    callback add-entry();
+    callback edit-entry(string);
+    callback save-entry(EntryDraft);
+    callback cancel-edit();
+    callback ask-delete(string);
+    callback confirm-delete();
+    callback copy-code(string);
+    callback import-uri(string);
+    callback import-image();
+    callback scan-screen();
+    callback save-settings(bool, bool);
+    callback quit-app();
+
+    function go(where: string) {
+        if root.page == "edit" && where == "accounts" { root.cancel-edit(); }
+        root.edit-error = "";
+        root.feedback = "";
+        root.page = where;
+    }
+    changed page => {
+        // Imported links can include a secret. Drop the input when leaving the import page.
+        if root.page != "import" { root.link = ""; }
+        if root.page == "settings" {
+            root.staged-group = root.group-codes;
+            root.staged-notes = root.show-notes;
+        }
+    }
+
+    VerticalLayout {
+        Rectangle {
+            height: 60px; background: Skin.paper;
+            HorizontalLayout {
+                padding-left: 22px; padding-right: 18px; spacing: 10px;
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 31px; height: 31px; border-radius: 9px; background: Skin.accent;
+                    Glyph { x: 5px; y: 5px; width: 21px; height: 21px; data: Paths.leaf; ink: white; }
+                }
+                Text { text: "OTPLeaf"; font-size: 22px; font-weight: 700; color: Skin.ink; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                if root.page == "accounts": Action {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Paths.settings; label: "设置"; icon-only: true;
+                    triggered => { root.go("settings"); }
+                }
+                if root.page != "accounts": Action {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Paths.back; label: "返回"; enabled: !root.busy;
+                    triggered => { root.go("accounts"); }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Skin.border; }
+        }
+
+        if root.page == "accounts": VerticalLayout {
+            padding: 20px; padding-bottom: 0px; spacing: 13px;
+            HorizontalLayout {
+                height: 38px; spacing: 9px;
+                Heading { text: "验证码"; }
+                Text {
+                    text: root.query == "" ? root.total-count + " 项" : root.rows.length + " / " + root.total-count + " 项";
+                    font-size: 12px; color: Skin.muted; vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Action { label: "导入"; glyph: Paths.import; triggered => { root.go("import"); } }
+                Action { label: "添加"; glyph: Paths.plus; kind: "primary"; triggered => { root.add-entry(); } }
+            }
+            LineEdit {
+                height: 36px;
+                placeholder-text: "搜索名称或备注";
+                accessible-label: "搜索名称或备注";
+                text <=> root.query;
+                edited(value) => { root.search(value); }
+            }
+            if root.rows.length > 0: ListView {
+                vertical-stretch: 1;
+                horizontal-scrollbar-policy: always-off;
+                for item in root.rows: Rectangle {
+                    height: 84px;
+                    TokenCard {
+                        width: parent.width;
+                        account: item; show-notes: root.show-notes;
+                        copy => { root.copy-code(item.id); }
+                        edit => { root.edit-entry(item.id); }
+                        remove => { root.ask-delete(item.id); }
+                    }
+                }
+            }
+            if root.rows.length == 0: Paper {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: center; spacing: 9px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 60px; height: 60px; border-radius: 18px; background: Skin.tint;
+                            Glyph {
+                                x: 14px; y: 14px; width: 32px; height: 32px; ink: Skin.accent;
+                                data: root.query == "" ? Paths.leaf : Paths.search;
+                            }
+                        }
+                    }
+                    Text {
+                        text: root.query == "" ? "添加第一个验证码" : "没有匹配的条目";
+                        height: 31px; font-size: 18px; font-weight: 650;
+                        color: Skin.ink; horizontal-alignment: center; vertical-alignment: bottom;
+                    }
+                    Text {
+                        text: root.query == "" ? "手动输入密钥，或导入已有的验证器二维码。" : "试试其他名称或备注。";
+                        color: Skin.muted; height: 23px; font-size: 13px; horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        if root.page == "edit": VerticalLayout {
+            padding: 20px; padding-bottom: 0px; spacing: 10px;
+            Heading { text: root.draft.id == "" ? "添加条目" : "编辑条目"; }
+            Paper {
+                VerticalLayout {
+                    padding: 16px; spacing: 6px; alignment: start;
+                    Caption { text: "名称"; }
+                    DraftInput {
+                        height: 34px; placeholder-text: "服务或账号名称"; accessible-label: "名称";
+                        draft-value: root.draft.name; edited(value) => { root.draft.name = value; }
+                    }
+                    Caption { text: "密钥"; }
+                    DraftInput {
+                        height: 34px; placeholder-text: "Base32 密钥"; accessible-label: "密钥";
+                        draft-value: root.draft.secret; edited(value) => { root.draft.secret = value; }
+                    }
+                    HorizontalLayout {
+                        spacing: 10px; height: 60px;
+                        VerticalLayout {
+                            spacing: 4px;
+                            Caption { text: "位数"; }
+                            DraftInput {
+                                height: 34px; min-width: 60px; accessible-label: "位数";
+                                draft-value: root.draft.digits; edited(value) => { root.draft.digits = value; }
+                            }
+                        }
+                        VerticalLayout {
+                            spacing: 4px;
+                            Caption { text: "周期（秒）"; }
+                            DraftInput {
+                                height: 34px; min-width: 60px; accessible-label: "周期（秒）";
+                                draft-value: root.draft.period; edited(value) => { root.draft.period = value; }
+                            }
+                        }
+                        VerticalLayout {
+                            spacing: 4px;
+                            Caption { text: "算法"; }
+                            ComboBox {
+                                accessible-label: "算法"; height: 34px; min-width: 115px;
+                                model: ["SHA1", "SHA256", "SHA512"];
+                                property <int> draft-index: root.draft.algorithm == "SHA512" ? 2 : root.draft.algorithm == "SHA256" ? 1 : 0;
+                                current-index: self.draft-index;
+                                changed draft-index => { self.current-index = self.draft-index; }
+                                selected(value) => { root.draft.algorithm = value; }
+                            }
+                        }
+                    }
+                    Caption { text: "备注"; }
+                    DraftInput {
+                        height: 34px; placeholder-text: "可选"; accessible-label: "备注";
+                        draft-value: root.draft.note; edited(value) => { root.draft.note = value; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: 36px; alignment: end; spacing: 8px;
+                Action { label: "取消"; triggered => { root.go("accounts"); } }
+                Action { label: "保存条目"; kind: "primary"; triggered => { root.save-entry(root.draft); } }
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
+
+        if root.page == "import": VerticalLayout {
+            padding: 20px; padding-bottom: 0px; spacing: 14px;
+            Heading { text: "导入条目"; }
+            Paper {
+                VerticalLayout {
+                    padding: 16px; spacing: 10px;
+                    Caption { text: "验证器链接"; }
+                    LineEdit {
+                        height: 36px; placeholder-text: "otpauth://totp/…"; accessible-label: "验证器链接";
+                        text <=> root.link;
+                        accepted => { if !root.busy && !root.link.is-empty { root.import-uri(root.link); } }
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        Action {
+                            label: "解析链接"; kind: "primary"; enabled: !root.busy && !root.link.is-empty;
+                            triggered => { root.import-uri(root.link); }
+                        }
+                    }
+                }
+            }
+            Paper {
+                VerticalLayout {
+                    padding: 16px; spacing: 8px;
+                    Caption { text: "二维码"; }
+                    Text { text: "选择二维码图片，或将二维码显示在屏幕上后开始识别。"; font-size: 13px; color: Skin.muted; wrap: word-wrap; }
+                    HorizontalLayout {
+                        height: 38px; alignment: start; spacing: 9px;
+                        Action { label: "打开图片"; glyph: Paths.picture; enabled: !root.busy; triggered => { root.import-image(); } }
+                        Action { label: "识别屏幕"; glyph: Paths.screen; enabled: !root.busy; triggered => { root.scan-screen(); } }
+                    }
+                }
+            }
+            if root.busy: Text { text: "正在识别二维码…"; color: Skin.accent; font-size: 13px; }
+            Rectangle { vertical-stretch: 1; }
+        }
+
+        if root.page == "settings": VerticalLayout {
+            padding: 20px; padding-bottom: 0px; spacing: 14px;
+            Heading { text: "设置"; }
+            Paper {
+                VerticalLayout {
+                    padding: 16px; spacing: 12px;
+                    Caption { text: "列表显示"; }
+                    CheckBox { text: "分组显示验证码"; checked <=> root.staged-group; }
+                    CheckBox { text: "显示条目备注"; checked <=> root.staged-notes; }
+                }
+            }
+            Paper {
+                VerticalLayout {
+                    padding: 16px; spacing: 7px;
+                    Caption { text: "便携数据目录"; }
+                    Text { text: root.data-path; wrap: char-wrap; color: Skin.ink; font-size: 13px; }
+                    Text { text: "密钥以明文保存。备份或移动时请一并复制 data 目录。"; wrap: word-wrap; color: Skin.muted; font-size: 12px; }
+                }
+            }
+            HorizontalLayout {
+                height: 36px; spacing: 8px;
+                Action { label: "退出 OTPLeaf"; triggered => { root.quit-app(); } }
+                Rectangle { horizontal-stretch: 1; }
+                Action { label: "保存设置"; kind: "primary"; triggered => { root.save-settings(root.staged-group, root.staged-notes); } }
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
+
+        if root.page == "delete": VerticalLayout {
+            padding: 20px; padding-bottom: 0px; spacing: 14px;
+            Heading { text: "删除条目"; }
+            Paper {
+                VerticalLayout {
+                    padding: 16px; spacing: 10px;
+                    Text { text: root.pending-name; color: Skin.ink; font-size: 17px; font-weight: 650; wrap: char-wrap; }
+                    Text { text: "删除后，OTPLeaf 将无法再为此条目生成验证码。"; color: Skin.muted; font-size: 13px; wrap: word-wrap; }
+                    HorizontalLayout {
+                        height: 36px; alignment: end; spacing: 8px;
+                        Action { label: "取消"; triggered => { root.go("accounts"); } }
+                        Action { label: "确认删除"; kind: "destructive"; triggered => { root.confirm-delete(); } }
+                    }
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
+
+        Rectangle {
+            min-height: 32px;
+            preferred-height: max(32px, status.preferred-height + 12px);
+            vertical-stretch: 0;
+            status := Text {
+                x: 21px; width: parent.width - 42px;
+                text: root.edit-error != "" ? root.edit-error : root.feedback != "" ? root.feedback
+                    : root.page == "accounts" && root.rows.length > 0 ? "点击验证码即可复制" : "";
+                wrap: word-wrap; vertical-alignment: center;
+                color: root.edit-error != "" ? Skin.danger : root.feedback != "" ? Skin.accent : Skin.muted;
+                font-size: 12px;
+            }
+        }
+    }
+}
