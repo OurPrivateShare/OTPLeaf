@@ -1,17 +1,16 @@
-import { CheckBox, ComboBox, LineEdit, ListView } from "std-widgets.slint";
-import { Action, Caption, Glyph, Heading, Paper, Paths, Skin } from "./widgets.slint";
+import { ComboBox, LineEdit, ListView } from "std-widgets.slint";
+import { Action, Caption, CopyTarget, Glyph, Heading, Paper, Paths, Skin } from "./widgets.slint";
 
 export struct AccountRow {
-    id: string, name: string, note: string, code: string, remaining: int,
+    id: string, name: string, masked-secret: string, code: string, remaining: int,
     period: int, algorithm: string, digits: int,
 }
 export struct EntryDraft {
-    id: string, name: string, secret: string, digits: string, period: string,
-    algorithm: string, note: string,
+    id: string, name: string, secret: string, digits: string, period: string, algorithm: string,
 }
 
-// Typing replaces a LineEdit's one-way text binding. The editor stays open
-// while reviewing a batch of QR codes, so synchronize incoming drafts too.
+// An edit breaks the LineEdit's initial binding. Rebind incoming drafts when
+// reviewing the next QR code without closing the editor.
 component DraftInput inherits LineEdit {
     in property <string> draft-value;
     text: root.draft-value;
@@ -22,55 +21,55 @@ component DraftInput inherits LineEdit {
 
 component TokenCard inherits Paper {
     in property <AccountRow> account;
-    in property <bool> show-notes;
-    callback copy();
+    in property <bool> can-copy;
+    in property <bool> can-edit;
+    callback copy-code();
+    callback copy-secret();
     callback edit();
     callback remove();
-    height: 76px;
+    height: 70px;
 
     HorizontalLayout {
-        padding-left: 14px; padding-right: 10px;
-        spacing: 10px;
-        Rectangle {
-            y: (parent.height - self.height) / 2;
-            width: 33px; height: 33px; border-radius: 9px; background: Skin.tint;
-            Glyph { x: 7px; y: 7px; width: 19px; height: 19px; data: Paths.key; ink: Skin.accent; }
-        }
+        padding-left: 15px; padding-right: 9px; spacing: 6px;
         VerticalLayout {
-            alignment: center;
-            spacing: 3px;
-            horizontal-stretch: 1;
-            min-width: 45px;
+            alignment: center; spacing: 3px; horizontal-stretch: 1; min-width: 48px;
             Text {
                 text: root.account.name;
                 font-size: 15px; font-weight: 650; color: Skin.ink;
-                height: 23px; min-width: 0px; overflow: elide;
-                vertical-alignment: center;
+                height: 23px; min-width: 0px; overflow: elide; vertical-alignment: center;
             }
             Text {
-                text: root.show-notes && root.account.note != "" ? root.account.note
-                    : root.account.algorithm + "  ·  " + root.account.digits + " 位";
-                color: Skin.muted; font-size: 12px;
-                height: 18px; min-width: 0px; overflow: elide;
-                vertical-alignment: center;
+                text: root.account.algorithm + "  ·  " + root.account.digits + " 位";
+                color: Skin.muted; font-size: 12px; height: 18px;
+                min-width: 0px; overflow: elide; vertical-alignment: center;
             }
         }
-        code-button := Rectangle {
-            y: (parent.height - self.height) / 2;
-            width: 149px; height: 57px; border-radius: 7px;
-            background: copy-hit.has-hover ? Skin.tint : transparent;
-            border-width: copy-keys.has-focus ? 2px : 0px;
-            border-color: #4c9476;
-            accessible-role: button;
-            accessible-label: "复制 " + root.account.name + " 的验证码";
-            accessible-action-default => { root.copy(); }
-            forward-focus: copy-keys;
+        CopyTarget {
+            y: (parent.height - self.height) / 2; height: 52px; width: 122px;
+            label: "复制 " + root.account.name + " 的密钥"; enabled: root.can-copy;
+            copied => { root.copy-secret(); }
             VerticalLayout {
-                padding-left: 6px; padding-right: 6px;
-                alignment: center;
+                alignment: center; padding-left: 5px; padding-right: 5px;
                 Text {
-                    text: root.account.code; font-size: 23px; font-weight: 700;
-                    color: Skin.accent; height: 31px; vertical-alignment: center;
+                    text: "密钥"; font-size: 11px; color: Skin.muted;
+                    height: 17px; vertical-alignment: center;
+                }
+                Text {
+                    text: root.account.masked-secret; font-size: 13px; font-weight: 600;
+                    height: 23px; color: Skin.ink; min-width: 0px; overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        CopyTarget {
+            y: (parent.height - self.height) / 2; width: 138px; height: 55px;
+            label: "复制 " + root.account.name + " 的验证码"; enabled: root.can-copy;
+            copied => { root.copy-code(); }
+            VerticalLayout {
+                padding-left: 5px; padding-right: 5px; alignment: center;
+                Text {
+                    text: root.account.code; font-size: 22px; font-weight: 700;
+                    color: Skin.accent; height: 30px; vertical-alignment: center;
                 }
                 HorizontalLayout {
                     spacing: 7px; height: 15px;
@@ -78,48 +77,40 @@ component TokenCard inherits Paper {
                         y: (parent.height - self.height) / 2;
                         height: 4px; border-radius: 2px; background: #e2ebe2;
                         Rectangle {
-                            x: 0px;
+                            x: 0px; height: parent.height; border-radius: 2px;
                             width: parent.width * min(1, max(0, root.account.remaining / max(1, root.account.period)));
-                            height: parent.height; border-radius: 2px;
                             background: root.account.remaining <= 5 ? #b57a37 : #69a380;
                         }
                     }
                     Text {
-                        text: root.account.remaining + " s";
-                        color: Skin.muted; font-size: 11px; min-width: 27px;
-                        horizontal-alignment: right; vertical-alignment: center;
+                        text: root.account.remaining + " s"; color: Skin.muted;
+                        font-size: 11px; min-width: 27px; horizontal-alignment: right; vertical-alignment: center;
                     }
                 }
             }
-            copy-keys := FocusScope {
-                width: 0px;
-                key-pressed(e) => {
-                    if e.text == Key.Space || e.text == Key.Return { root.copy(); return accept; }
-                    return reject;
-                }
-            }
-            copy-hit := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { copy-keys.focus(); root.copy(); }
-            }
         }
-        Rectangle { y: (parent.height - self.height) / 2; width: 1px; height: 28px; background: Skin.border; }
+        Rectangle { y: (parent.height - self.height) / 2; width: 1px; height: 25px; background: Skin.border; }
         HorizontalLayout {
-            y: (parent.height - self.height) / 2;
-            height: 32px;
-            spacing: 0px;
-            Action { label: "编辑 " + root.account.name; glyph: Paths.edit; icon-only: true; triggered => { root.edit(); } }
-            Action { label: "删除 " + root.account.name; glyph: Paths.trash; icon-only: true; kind: "danger"; triggered => { root.remove(); } }
+            y: (parent.height - self.height) / 2; height: 32px;
+            Action {
+                label: "编辑 " + root.account.name; glyph: Paths.edit; icon-only: true; enabled: root.can-edit;
+                triggered => { root.edit(); }
+            }
+            Action {
+                label: "删除 " + root.account.name; glyph: Paths.trash; icon-only: true; kind: "danger"; enabled: root.can-edit;
+                triggered => { root.remove(); }
+            }
         }
     }
 }
 
 export component AppWindow inherits Window {
     title: "OTPLeaf";
+    icon: @image-url("../assets/otpleaf.png");
     min-width: 535px;
-    min-height: 560px;
-    preferred-width: 590px;
-    preferred-height: 620px;
+    min-height: 430px;
+    preferred-width: 620px;
+    preferred-height: 520px;
     background: Skin.canvas;
     default-font-size: 14px;
 
@@ -130,14 +121,11 @@ export component AppWindow inherits Window {
     in-out property <EntryDraft> draft;
     in-out property <string> edit-error;
     in-out property <string> feedback;
-    in-out property <bool> group-codes: true;
-    in-out property <bool> show-notes: true;
-    in-out property <string> data-path;
     in-out property <string> pending-name;
     in-out property <bool> busy;
     private property <string> link;
-    private property <bool> staged-group;
-    private property <bool> staged-notes;
+    private property <bool> modal: root.page != "accounts";
+    private property <bool> can-edit: !root.modal && !root.busy;
 
     callback search(string);
     callback add-entry();
@@ -147,82 +135,81 @@ export component AppWindow inherits Window {
     callback ask-delete(string);
     callback confirm-delete();
     callback copy-code(string);
+    callback copy-secret(string);
     callback import-uri(string);
     callback import-image();
     callback scan-screen();
-    callback save-settings(bool, bool);
     callback quit-app();
 
-    function go(where: string) {
-        if root.page == "edit" && where == "accounts" { root.cancel-edit(); }
+    function close-dialog() {
+        if root.page == "edit" { root.cancel-edit(); }
         root.edit-error = "";
         root.feedback = "";
-        root.page = where;
+        root.page = "accounts";
     }
     changed page => {
-        // Imported links can include a secret. Drop the input when leaving the import page.
         if root.page != "import" { root.link = ""; }
-        if root.page == "settings" {
-            root.staged-group = root.group-codes;
-            root.staged-notes = root.show-notes;
-        }
+        if !root.modal { search-input.focus(); }
     }
 
     VerticalLayout {
         Rectangle {
             height: 60px; background: Skin.paper;
             HorizontalLayout {
-                padding-left: 22px; padding-right: 18px; spacing: 10px;
+                padding-left: 16px; padding-right: 16px; spacing: 6px;
                 Rectangle {
                     y: (parent.height - self.height) / 2;
-                    width: 31px; height: 31px; border-radius: 9px; background: Skin.accent;
-                    Glyph { x: 5px; y: 5px; width: 21px; height: 21px; data: Paths.leaf; ink: white; }
+                    width: 30px; height: 30px; border-radius: 9px; background: Skin.accent;
+                    Glyph { x: 5px; y: 5px; width: 20px; height: 20px; data: Paths.leaf; ink: white; }
                 }
-                Text { text: "OTPLeaf"; font-size: 22px; font-weight: 700; color: Skin.ink; vertical-alignment: center; }
+                Text { text: "OTPLeaf"; font-size: 20px; font-weight: 700; color: Skin.ink; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
-                if root.page == "accounts": Action {
+                Action {
                     y: (parent.height - self.height) / 2;
-                    glyph: Paths.settings; label: "设置"; icon-only: true;
-                    triggered => { root.go("settings"); }
+                    label: "导入条目"; enabled: root.can-edit;
+                    triggered => { root.edit-error = ""; root.feedback = ""; root.page = "import"; }
                 }
-                if root.page != "accounts": Action {
+                Action {
                     y: (parent.height - self.height) / 2;
-                    glyph: Paths.back; label: "返回"; enabled: !root.busy;
-                    triggered => { root.go("accounts"); }
+                    label: "打开图片"; enabled: root.can-edit;
+                    triggered => { root.import-image(); }
+                }
+                Action {
+                    y: (parent.height - self.height) / 2;
+                    label: "识别屏幕"; enabled: root.can-edit;
+                    triggered => { root.scan-screen(); }
+                }
+                Action {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Paths.plus; label: "添加条目"; kind: "primary"; enabled: root.can-edit;
+                    triggered => { root.add-entry(); }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Skin.border; }
         }
-
-        if root.page == "accounts": VerticalLayout {
-            padding: 20px; padding-bottom: 0px; spacing: 13px;
+        VerticalLayout {
+            padding: 16px; padding-bottom: 0px; spacing: 12px;
             HorizontalLayout {
-                height: 38px; spacing: 9px;
-                Heading { text: "验证码"; }
+                spacing: 12px; height: 36px;
+                search-input := LineEdit {
+                    placeholder-text: "搜索条目名称"; accessible-label: "搜索条目名称";
+                    text <=> root.query; enabled: !root.modal; height: 36px;
+                    edited(value) => { root.search(value); }
+                }
                 Text {
                     text: root.query == "" ? root.total-count + " 项" : root.rows.length + " / " + root.total-count + " 项";
-                    font-size: 12px; color: Skin.muted; vertical-alignment: center;
+                    vertical-alignment: center; font-size: 13px; color: Skin.muted;
+                    horizontal-stretch: 0;
                 }
-                Rectangle { horizontal-stretch: 1; }
-                Action { label: "导入"; glyph: Paths.import; triggered => { root.go("import"); } }
-                Action { label: "添加"; glyph: Paths.plus; kind: "primary"; triggered => { root.add-entry(); } }
-            }
-            LineEdit {
-                height: 36px;
-                placeholder-text: "搜索名称或备注";
-                accessible-label: "搜索名称或备注";
-                text <=> root.query;
-                edited(value) => { root.search(value); }
             }
             if root.rows.length > 0: ListView {
-                vertical-stretch: 1;
-                horizontal-scrollbar-policy: always-off;
+                vertical-stretch: 1; horizontal-scrollbar-policy: always-off;
                 for item in root.rows: Rectangle {
-                    height: 84px;
+                    height: 78px;
                     TokenCard {
-                        width: parent.width;
-                        account: item; show-notes: root.show-notes;
-                        copy => { root.copy-code(item.id); }
+                        width: parent.width; account: item; can-copy: !root.modal; can-edit: root.can-edit;
+                        copy-secret => { root.copy-secret(item.id); }
+                        copy-code => { root.copy-code(item.id); }
                         edit => { root.edit-entry(item.id); }
                         remove => { root.ask-delete(item.id); }
                     }
@@ -231,186 +218,152 @@ export component AppWindow inherits Window {
             if root.rows.length == 0: Paper {
                 vertical-stretch: 1;
                 VerticalLayout {
-                    alignment: center; spacing: 9px;
+                    alignment: center; spacing: 8px;
                     HorizontalLayout {
                         alignment: center;
                         Rectangle {
-                            width: 60px; height: 60px; border-radius: 18px; background: Skin.tint;
+                            width: 55px; height: 55px; border-radius: 16px; background: Skin.tint;
                             Glyph {
-                                x: 14px; y: 14px; width: 32px; height: 32px; ink: Skin.accent;
+                                x: 13px; y: 13px; width: 29px; height: 29px; ink: Skin.accent;
                                 data: root.query == "" ? Paths.leaf : Paths.search;
                             }
                         }
                     }
                     Text {
                         text: root.query == "" ? "添加第一个验证码" : "没有匹配的条目";
-                        height: 31px; font-size: 18px; font-weight: 650;
+                        height: 30px; font-size: 18px; font-weight: 650;
                         color: Skin.ink; horizontal-alignment: center; vertical-alignment: bottom;
                     }
                     Text {
-                        text: root.query == "" ? "手动输入密钥，或导入已有的验证器二维码。" : "试试其他名称或备注。";
+                        text: root.query == "" ? "手动输入密钥，或导入已有的验证器二维码。" : "试试其他名称。";
                         color: Skin.muted; height: 23px; font-size: 13px; horizontal-alignment: center;
                     }
                 }
             }
         }
+        HorizontalLayout {
+            min-height: 35px; vertical-stretch: 0;
+            padding-left: 17px; padding-right: 11px; spacing: 12px;
+            Text {
+                text: root.modal ? "" : root.edit-error != "" ? root.edit-error : root.feedback != "" ? root.feedback
+                    : root.busy ? "正在识别二维码…" : root.rows.length > 0 ? "点击密钥或验证码即可复制" : "";
+                font-size: 12px; color: root.edit-error != "" ? Skin.danger : root.feedback != "" ? Skin.accent : Skin.muted;
+                wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1;
+            }
+            Action {
+                label: "退出"; kind: "quiet"; enabled: !root.modal;
+                y: (parent.height - self.height) / 2; height: 30px;
+                triggered => { root.quit-app(); }
+            }
+        }
+    }
 
-        if root.page == "edit": VerticalLayout {
-            padding: 20px; padding-bottom: 0px; spacing: 10px;
-            Heading { text: root.draft.id == "" ? "添加条目" : "编辑条目"; }
-            Paper {
-                VerticalLayout {
-                    padding: 16px; spacing: 6px; alignment: start;
-                    Caption { text: "名称"; }
-                    DraftInput {
-                        height: 34px; placeholder-text: "服务或账号名称"; accessible-label: "名称";
-                        draft-value: root.draft.name; edited(value) => { root.draft.name = value; }
+    if root.modal: Rectangle {
+        background: #20332b4d;
+        // Consume pointer events throughout the scrim and beneath modal text.
+        TouchArea {}
+        FocusScope {
+            key-pressed(e) => {
+                if e.text == Key.Escape { root.close-dialog(); return accept; }
+                return reject;
+            }
+            dialog := Paper {
+                width: min(parent.width - 36px, 435px);
+                height: contents.preferred-height;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                drop-shadow-color: #162a1e30;
+                drop-shadow-blur: 18px; drop-shadow-offset-y: 5px;
+                contents := VerticalLayout {
+                    padding: 21px; spacing: 12px;
+                    Heading {
+                        text: root.page == "import" ? "导入条目" : root.page == "delete" ? "删除条目"
+                            : root.draft.id == "" ? "添加条目" : "编辑条目";
                     }
-                    Caption { text: "密钥"; }
-                    DraftInput {
-                        height: 34px; placeholder-text: "Base32 密钥"; accessible-label: "密钥";
-                        draft-value: root.draft.secret; edited(value) => { root.draft.secret = value; }
-                    }
-                    HorizontalLayout {
-                        spacing: 10px; height: 60px;
-                        VerticalLayout {
-                            spacing: 4px;
-                            Caption { text: "位数"; }
-                            DraftInput {
-                                height: 34px; min-width: 60px; accessible-label: "位数";
-                                draft-value: root.draft.digits; edited(value) => { root.draft.digits = value; }
+                    if root.page == "edit": VerticalLayout {
+                        spacing: 7px;
+                        Caption { text: "名称"; }
+                        name-input := DraftInput {
+                            height: 36px; placeholder-text: "服务或账号名称"; accessible-label: "名称";
+                            draft-value: root.draft.name; edited(value) => { root.draft.name = value; }
+                            init => { self.focus(); }
+                        }
+                        Caption { text: "密钥"; }
+                        DraftInput {
+                            height: 36px; placeholder-text: "Base32 密钥"; accessible-label: "密钥";
+                            draft-value: root.draft.secret; edited(value) => { root.draft.secret = value; }
+                        }
+                        HorizontalLayout {
+                            spacing: 9px; height: 62px;
+                            VerticalLayout {
+                                spacing: 3px;
+                                Caption { text: "位数"; }
+                                DraftInput {
+                                    height: 35px; min-width: 48px; accessible-label: "位数";
+                                    draft-value: root.draft.digits; edited(value) => { root.draft.digits = value; }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 3px;
+                                Caption { text: "周期（秒）"; }
+                                DraftInput {
+                                    height: 35px; min-width: 55px; accessible-label: "周期（秒）";
+                                    draft-value: root.draft.period; edited(value) => { root.draft.period = value; }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 3px;
+                                Caption { text: "算法"; }
+                                ComboBox {
+                                    accessible-label: "算法"; height: 35px; min-width: 108px;
+                                    model: ["SHA1", "SHA256", "SHA512"];
+                                    property <int> draft-index: root.draft.algorithm == "SHA512" ? 2 : root.draft.algorithm == "SHA256" ? 1 : 0;
+                                    current-index: self.draft-index;
+                                    changed draft-index => { self.current-index = self.draft-index; }
+                                    selected(value) => { root.draft.algorithm = value; }
+                                }
                             }
                         }
-                        VerticalLayout {
-                            spacing: 4px;
-                            Caption { text: "周期（秒）"; }
-                            DraftInput {
-                                height: 34px; min-width: 60px; accessible-label: "周期（秒）";
-                                draft-value: root.draft.period; edited(value) => { root.draft.period = value; }
-                            }
-                        }
-                        VerticalLayout {
-                            spacing: 4px;
-                            Caption { text: "算法"; }
-                            ComboBox {
-                                accessible-label: "算法"; height: 34px; min-width: 115px;
-                                model: ["SHA1", "SHA256", "SHA512"];
-                                property <int> draft-index: root.draft.algorithm == "SHA512" ? 2 : root.draft.algorithm == "SHA256" ? 1 : 0;
-                                current-index: self.draft-index;
-                                changed draft-index => { self.current-index = self.draft-index; }
-                                selected(value) => { root.draft.algorithm = value; }
-                            }
+                    }
+                    if root.page == "import": VerticalLayout {
+                        spacing: 5px;
+                        Caption { text: "验证器链接"; }
+                        LineEdit {
+                            height: 36px; placeholder-text: "otpauth://totp/…"; accessible-label: "验证器链接";
+                            text <=> root.link; init => { self.focus(); }
+                            accepted => { if !root.link.is-empty { root.import-uri(root.link); } }
                         }
                     }
-                    Caption { text: "备注"; }
-                    DraftInput {
-                        height: 34px; placeholder-text: "可选"; accessible-label: "备注";
-                        draft-value: root.draft.note; edited(value) => { root.draft.note = value; }
-                    }
-                }
-            }
-            HorizontalLayout {
-                height: 36px; alignment: end; spacing: 8px;
-                Action { label: "取消"; triggered => { root.go("accounts"); } }
-                Action { label: "保存条目"; kind: "primary"; triggered => { root.save-entry(root.draft); } }
-            }
-            Rectangle { vertical-stretch: 1; }
-        }
-
-        if root.page == "import": VerticalLayout {
-            padding: 20px; padding-bottom: 0px; spacing: 14px;
-            Heading { text: "导入条目"; }
-            Paper {
-                VerticalLayout {
-                    padding: 16px; spacing: 10px;
-                    Caption { text: "验证器链接"; }
-                    LineEdit {
-                        height: 36px; placeholder-text: "otpauth://totp/…"; accessible-label: "验证器链接";
-                        text <=> root.link;
-                        accepted => { if !root.busy && !root.link.is-empty { root.import-uri(root.link); } }
-                    }
-                    HorizontalLayout {
-                        alignment: end;
-                        Action {
-                            label: "解析链接"; kind: "primary"; enabled: !root.busy && !root.link.is-empty;
-                            triggered => { root.import-uri(root.link); }
+                    if root.page == "delete": VerticalLayout {
+                        spacing: 7px;
+                        Text {
+                            text: root.pending-name; color: Skin.ink; font-size: 16px; font-weight: 650;
+                            overflow: elide; min-width: 0px;
                         }
+                        Text { text: "删除后将无法再为此条目生成验证码。"; color: Skin.muted; font-size: 13px; wrap: word-wrap; }
                     }
-                }
-            }
-            Paper {
-                VerticalLayout {
-                    padding: 16px; spacing: 8px;
-                    Caption { text: "二维码"; }
-                    Text { text: "选择二维码图片，或将二维码显示在屏幕上后开始识别。"; font-size: 13px; color: Skin.muted; wrap: word-wrap; }
-                    HorizontalLayout {
-                        height: 38px; alignment: start; spacing: 9px;
-                        Action { label: "打开图片"; glyph: Paths.picture; enabled: !root.busy; triggered => { root.import-image(); } }
-                        Action { label: "识别屏幕"; glyph: Paths.screen; enabled: !root.busy; triggered => { root.scan-screen(); } }
+                    if root.edit-error != "" || root.feedback != "": Text {
+                        text: root.edit-error != "" ? root.edit-error : root.feedback;
+                        color: root.edit-error != "" ? Skin.danger : Skin.muted;
+                        font-size: 12px; wrap: word-wrap;
                     }
-                }
-            }
-            if root.busy: Text { text: "正在识别二维码…"; color: Skin.accent; font-size: 13px; }
-            Rectangle { vertical-stretch: 1; }
-        }
-
-        if root.page == "settings": VerticalLayout {
-            padding: 20px; padding-bottom: 0px; spacing: 14px;
-            Heading { text: "设置"; }
-            Paper {
-                VerticalLayout {
-                    padding: 16px; spacing: 12px;
-                    Caption { text: "列表显示"; }
-                    CheckBox { text: "分组显示验证码"; checked <=> root.staged-group; }
-                    CheckBox { text: "显示条目备注"; checked <=> root.staged-notes; }
-                }
-            }
-            Paper {
-                VerticalLayout {
-                    padding: 16px; spacing: 7px;
-                    Caption { text: "便携数据目录"; }
-                    Text { text: root.data-path; wrap: char-wrap; color: Skin.ink; font-size: 13px; }
-                    Text { text: "密钥以明文保存。备份或移动时请一并复制 data 目录。"; wrap: word-wrap; color: Skin.muted; font-size: 12px; }
-                }
-            }
-            HorizontalLayout {
-                height: 36px; spacing: 8px;
-                Action { label: "退出 OTPLeaf"; triggered => { root.quit-app(); } }
-                Rectangle { horizontal-stretch: 1; }
-                Action { label: "保存设置"; kind: "primary"; triggered => { root.save-settings(root.staged-group, root.staged-notes); } }
-            }
-            Rectangle { vertical-stretch: 1; }
-        }
-
-        if root.page == "delete": VerticalLayout {
-            padding: 20px; padding-bottom: 0px; spacing: 14px;
-            Heading { text: "删除条目"; }
-            Paper {
-                VerticalLayout {
-                    padding: 16px; spacing: 10px;
-                    Text { text: root.pending-name; color: Skin.ink; font-size: 17px; font-weight: 650; wrap: char-wrap; }
-                    Text { text: "删除后，OTPLeaf 将无法再为此条目生成验证码。"; color: Skin.muted; font-size: 13px; wrap: word-wrap; }
                     HorizontalLayout {
                         height: 36px; alignment: end; spacing: 8px;
-                        Action { label: "取消"; triggered => { root.go("accounts"); } }
-                        Action { label: "确认删除"; kind: "destructive"; triggered => { root.confirm-delete(); } }
+                        Action {
+                            label: "取消"; triggered => { root.close-dialog(); }
+                            init => { if root.page == "delete" { self.focus(); } }
+                        }
+                        Action {
+                            label: root.page == "edit" ? "保存条目" : root.page == "import" ? "解析链接" : "确认删除";
+                            kind: root.page == "delete" ? "destructive" : "primary";
+                            enabled: root.page != "import" || !root.link.is-empty;
+                            triggered => {
+                                if root.page == "edit" { root.save-entry(root.draft); }
+                                else if root.page == "import" { root.import-uri(root.link); }
+                                else { root.confirm-delete(); }
+                            }
+                        }
                     }
                 }
-            }
-            Rectangle { vertical-stretch: 1; }
-        }
-
-        Rectangle {
-            min-height: 32px;
-            preferred-height: max(32px, status.preferred-height + 12px);
-            vertical-stretch: 0;
-            status := Text {
-                x: 21px; width: parent.width - 42px;
-                text: root.edit-error != "" ? root.edit-error : root.feedback != "" ? root.feedback
-                    : root.page == "accounts" && root.rows.length > 0 ? "点击验证码即可复制" : "";
-                wrap: word-wrap; vertical-alignment: center;
-                color: root.edit-error != "" ? Skin.danger : root.feedback != "" ? Skin.accent : Skin.muted;
-                font-size: 12px;
             }
         }
     }

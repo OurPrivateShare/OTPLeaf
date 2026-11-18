@@ -9,7 +9,7 @@ use windows_sys::core::w;
 
 const TRAY_MESSAGE: u32 = WM_APP + 1;
 const SHOW: usize = 1;
-const ADD: usize = 2;
+const SCAN_SCREEN: usize = 2;
 const QUIT: usize = 3;
 const FIRST_ACCOUNT: usize = 4;
 
@@ -142,7 +142,7 @@ impl State {
                 return;
             }
             AppendMenuW(menu, MF_STRING, SHOW, w!("显示窗口"));
-            AppendMenuW(menu, MF_STRING, ADD, w!("添加条目"));
+            AppendMenuW(menu, MF_STRING, SCAN_SCREEN, w!("识别屏幕"));
             let copy_menu = CreatePopupMenu();
             if !copy_menu.is_null() {
                 for (index, (_, name)) in accounts.iter().enumerate() {
@@ -183,7 +183,7 @@ impl State {
         };
         let action = match command {
             SHOW => TrayAction::Show,
-            ADD => TrayAction::Add,
+            SCAN_SCREEN => TrayAction::ScanScreen,
             QUIT => TrayAction::Quit,
             id if id >= FIRST_ACCOUNT => match accounts.get(id - FIRST_ACCOUNT) {
                 Some((account, _)) => TrayAction::Copy(account.clone()),

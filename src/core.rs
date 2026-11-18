@@ -49,8 +49,6 @@ pub struct Account {
     pub digits: u8,
     pub period: u32,
     pub algorithm: Algorithm,
-    #[serde(default)]
-    pub note: String,
 }
 
 impl Default for Account {
@@ -62,7 +60,6 @@ impl Default for Account {
             digits: 6,
             period: 30,
             algorithm: Algorithm::Sha1,
-            note: String::new(),
         }
     }
 }

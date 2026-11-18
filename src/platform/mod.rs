@@ -16,7 +16,7 @@ pub use windows_tray::Tray;
 #[derive(Clone, Debug)]
 pub enum TrayAction {
     Show,
-    Add,
+    ScanScreen,
     Copy(String),
     Quit,
 }

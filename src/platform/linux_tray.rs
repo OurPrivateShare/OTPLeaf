@@ -83,7 +83,7 @@ impl ksni::Tray for Indicator {
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
             item("显示窗口", TrayAction::Show),
-            item("添加条目", TrayAction::Add),
+            item("识别屏幕", TrayAction::ScanScreen),
             SubMenu {
                 label: "复制验证码".into(),
                 enabled: !self.accounts.is_empty(),

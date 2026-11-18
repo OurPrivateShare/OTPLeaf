@@ -6,36 +6,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tempfile::NamedTempFile;
 
 use crate::core::Account;
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(default)]
-pub struct Config {
-    pub group_codes: bool,
-    pub show_notes: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            group_codes: true,
-            show_notes: true,
-        }
-    }
-}
 
 pub struct Store {
     dir: PathBuf,
     // Keep this handle open until every in-memory edit has finished.
     _lock: File,
     pub accounts: Vec<Account>,
-    pub config: Config,
 }
 
-fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
+fn read_accounts(path: &Path) -> Result<Option<Vec<Account>>, String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -51,10 +33,10 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
     })
 }
 
-fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
+fn write_accounts(path: &Path, accounts: &[Account]) -> Result<(), String> {
     let write = || -> io::Result<()> {
         let mut temp = NamedTempFile::new_in(path.parent().expect("data file has a parent"))?;
-        serde_json::to_writer_pretty(&mut temp, value)?;
+        serde_json::to_writer_pretty(&mut temp, accounts)?;
         temp.write_all(b"\n")?;
         temp.as_file().sync_all()?;
         // On both Windows and Linux, the existing destination is replaced
@@ -105,44 +87,25 @@ impl Store {
         })?;
 
         let accounts_path = dir.join("accounts.json");
-        let config_path = dir.join("config.json");
-        let existing_accounts: Option<Vec<Account>> = read_json(&accounts_path)?;
-        let existing_config: Option<Config> = read_json(&config_path)?;
-        let accounts = validate_accounts(existing_accounts.as_deref().unwrap_or_default())
-            .map_err(|err| format!("{}：{err}", accounts_path.display()))?;
-        if existing_accounts.is_none() {
-            write_json(&accounts_path, &accounts)?;
-        }
-        let config = match existing_config {
-            Some(config) => config,
+        let accounts = match read_accounts(&accounts_path)? {
+            Some(accounts) => validate_accounts(&accounts)
+                .map_err(|err| format!("{}：{err}", accounts_path.display()))?,
             None => {
-                let config = Config::default();
-                write_json(&config_path, &config)?;
-                config
+                write_accounts(&accounts_path, &[])?;
+                Vec::new()
             }
         };
         Ok(Self {
             dir,
             _lock: lock,
             accounts,
-            config,
         })
-    }
-
-    pub fn data_dir(&self) -> &Path {
-        &self.dir
     }
 
     pub fn save_accounts(&mut self, accounts: Vec<Account>) -> Result<(), String> {
         let next = validate_accounts(&accounts)?;
-        write_json(&self.dir.join("accounts.json"), &next)?;
+        write_accounts(&self.dir.join("accounts.json"), &next)?;
         self.accounts = next;
-        Ok(())
-    }
-
-    pub fn save_config(&mut self, config: Config) -> Result<(), String> {
-        write_json(&self.dir.join("config.json"), &config)?;
-        self.config = config;
         Ok(())
     }
 }
@@ -158,39 +121,42 @@ mod tests {
         let path = dir.path().to_path_buf();
         let mut store = Store::open_dir(path.clone()).unwrap();
         assert!(store.accounts.is_empty());
-        assert!(store.config.group_codes && store.config.show_notes);
         assert!(Store::open_dir(path.clone()).is_err());
         let account = Account {
-            secret: "m y".into(),
+            secret: "   jbsw y3dp   ehpk 3pxp  ".into(),
             name: " Test ".into(),
             ..Default::default()
         };
         let id = account.id.clone();
+        let code = account.code_at(59).unwrap();
         store.save_accounts(vec![account]).unwrap();
-        let config = Config {
-            group_codes: false,
-            show_notes: true,
-        };
-        store.save_config(config.clone()).unwrap();
+        assert_eq!(store.accounts[0].secret, "JBSWY3DPEHPK3PXP");
+        let bytes = fs::read(path.join("accounts.json")).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+            serde_json::json!([{
+                "id": id, "name": "Test", "secret": "JBSWY3DPEHPK3PXP",
+                "digits": 6, "period": 30, "algorithm": "SHA1"
+            }])
+        );
         drop(store);
         let mut reopened = Store::open_dir(path.clone()).unwrap();
         assert_eq!(reopened.accounts[0].id, id);
         assert_eq!(reopened.accounts[0].name, "Test");
-        assert_eq!(reopened.accounts[0].secret, "MY");
-        assert_eq!(reopened.config, config);
+        assert_eq!(reopened.accounts[0].secret, "JBSWY3DPEHPK3PXP");
+        assert_eq!(reopened.accounts[0].code_at(59).unwrap(), code);
         reopened.save_accounts(Vec::new()).unwrap();
         drop(reopened);
         assert!(Store::open_dir(path).unwrap().accounts.is_empty());
     }
 
     #[test]
-    fn malformed_files_are_preserved() {
-        for file in ["accounts.json", "config.json"] {
-            let dir = tempdir().unwrap();
-            fs::write(dir.path().join(file), b"invalid").unwrap();
-            assert!(Store::open_dir(dir.path().into()).is_err());
-            assert_eq!(fs::read(dir.path().join(file)).unwrap(), b"invalid");
-        }
+    fn malformed_accounts_are_preserved() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("accounts.json");
+        fs::write(&file, b"invalid").unwrap();
+        assert!(Store::open_dir(dir.path().into()).is_err());
+        assert_eq!(fs::read(file).unwrap(), b"invalid");
     }
 
     #[test]
@@ -209,17 +175,10 @@ mod tests {
         assert_eq!(store.accounts.len(), 1);
 
         // Simulate a destination the atomic replace cannot overwrite.
-        let file = dir.path().join("config.json");
+        let file = dir.path().join("accounts.json");
         fs::remove_file(&file).unwrap();
         fs::create_dir(file).unwrap();
-        assert!(
-            store
-                .save_config(Config {
-                    group_codes: false,
-                    show_notes: false
-                })
-                .is_err()
-        );
-        assert_eq!(store.config, Config::default());
+        assert!(store.save_accounts(Vec::new()).is_err());
+        assert_eq!(store.accounts.len(), 1);
     }
 }
