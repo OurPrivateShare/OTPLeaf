@@ -430,6 +430,7 @@ fn bind(ui: &AppWindow, app: &Rc<App>) {
 pub fn run() -> Result<(), String> {
     let store = Store::open_portable()?;
     let ui = AppWindow::new().map_err(|err| err.to_string())?;
+    ui.set_app_version(env!("CARGO_PKG_VERSION").into());
     let (tray_tx, tray_events) = mpsc::channel();
     let (scan_sender, scans) = mpsc::channel();
     let tray = match Tray::new(tray_tx) {

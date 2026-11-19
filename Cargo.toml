@@ -1,6 +1,6 @@
 [package]
 name = "otpleaf"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Offline portable desktop TOTP authenticator for Windows and Linux"
 

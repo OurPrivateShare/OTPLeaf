@@ -105,15 +105,16 @@ component TokenCard inherits Paper {
 }
 
 export component AppWindow inherits Window {
-    title: "OTPLeaf";
+    title: root.app-version == "" ? "OTPLeaf" : "OTPLeaf " + root.app-version;
     icon: @image-url("../assets/otpleaf.png");
-    min-width: 535px;
+    min-width: 560px;
     min-height: 430px;
     preferred-width: 620px;
     preferred-height: 520px;
     background: Skin.canvas;
     default-font-size: 14px;
 
+    in property <string> app-version;
     in-out property <[AccountRow]> rows;
     in-out property <int> total-count;
     in-out property <string> query;
@@ -166,17 +167,17 @@ export component AppWindow inherits Window {
                 Rectangle { horizontal-stretch: 1; }
                 Action {
                     y: (parent.height - self.height) / 2;
-                    label: "导入条目"; enabled: root.can-edit;
+                    glyph: Paths.import; label: "导入条目"; enabled: root.can-edit;
                     triggered => { root.edit-error = ""; root.feedback = ""; root.page = "import"; }
                 }
                 Action {
                     y: (parent.height - self.height) / 2;
-                    label: "打开图片"; enabled: root.can-edit;
+                    glyph: Paths.picture; label: "打开图片"; enabled: root.can-edit;
                     triggered => { root.import-image(); }
                 }
                 Action {
                     y: (parent.height - self.height) / 2;
-                    label: "识别屏幕"; enabled: root.can-edit;
+                    glyph: Paths.screen; label: "识别屏幕"; enabled: root.can-edit;
                     triggered => { root.scan-screen(); }
                 }
                 Action {
